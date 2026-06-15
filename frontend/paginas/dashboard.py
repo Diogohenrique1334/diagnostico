@@ -95,17 +95,18 @@ def _metricas(df_projetos: pd.DataFrame, df_filtrado: pd.DataFrame) -> None:
 
 
 def _graficos_principais(df_filtrado: pd.DataFrame) -> None:
-    with st.container(border=True, height=550):
-        col_graf1, col_graf2 = st.columns([3, 6])
-        with col_graf1.container(border=True, height=520):
-            mask = ~df_filtrado["status_projeto"].isin(_INATIVOS)
-            grafico_rosca(df_para_lista_dict(df_filtrado[mask], "status_projeto", "id", _agg="count"))
-        with col_graf2.container(border=True, height=520):
-            st.subheader("Projetos por Tipo")
-            barras_empilhadas_horizontais(
-                *dados_grafico_barras(df_filtrado, "tipo_projeto", "id", "status_projeto", _agg="count"),
-                tamanho="400px",
-            )
+
+    #with st.container(border=True, height=550):
+    #    col_graf1, col_graf2 = st.columns([3, 6])
+    #    with col_graf1.container(border=True, height=520):
+    #        mask = ~df_filtrado["status_projeto"].isin(_INATIVOS)
+    #        grafico_rosca(df_para_lista_dict(df_filtrado[mask], "status_projeto", "id", _agg="count"))
+    #    with col_graf2.container(border=True, height=520):
+    #        st.subheader("Projetos por Tipo")
+    #        barras_empilhadas_horizontais(
+    #           *dados_grafico_barras(df_filtrado, "tipo_projeto", "id", "status_projeto", _agg="count"),
+    #            tamanho="400px",
+    #        )
 
     with st.container(border=True):
         st.subheader("Habilidades por Tipo de Projeto (% dos projetos do tipo)")
@@ -129,12 +130,19 @@ def _graficos_principais(df_filtrado: pd.DataFrame) -> None:
 
 
 def _analises_adicionais(df_filtrado: pd.DataFrame) -> None:
-    with st.container(border=True):
-        st.subheader("📈 Análises Adicionais")
-        g1, g2 = st.columns([3, 2])
+    with st.container(border=True, height=510):
+        st.subheader("Análises de projetos")
+        g1, g2 = st.columns([2, 3])
 
-        with g1:
-            st.markdown("**Funil do Pipeline (etapas ativas)**")
+        with g1.container(border=True, height=420):
+            st.markdown("**Taxa de Conclusão de projetos**")
+            total_proj = len(df_filtrado)
+            concluidos = int(df_filtrado["status_projeto"].eq("Projeto Finalizado").sum())
+            taxa_pct = round((concluidos / total_proj) * 100, 1) if total_proj else 0.0
+            velocimetro(taxa_pct, titulo="Concluídos", tamanho="350px")
+
+        with g2.container(border=True, height=420):
+            st.markdown("**Funil do Pipeline (projetos ativos)**")
             ordem_status = [s.value for s in StatusProjeto if s.value not in _INATIVOS]
             ativos = df_filtrado[~df_filtrado["status_projeto"].isin(_INATIVOS)]
             contagem_status = ativos["status_projeto"].value_counts()
@@ -147,26 +155,27 @@ def _analises_adicionais(df_filtrado: pd.DataFrame) -> None:
             else:
                 st.info("Sem projetos ativos para exibir o funil.")
 
-        with g2:
-            st.markdown("**Taxa de Conclusão**")
-            total_proj = len(df_filtrado)
-            concluidos = int(df_filtrado["status_projeto"].eq("Projeto Finalizado").sum())
-            taxa_pct = round((concluidos / total_proj) * 100, 1) if total_proj else 0.0
-            velocimetro(taxa_pct, titulo="Concluídos", tamanho="300px")
+        with st.container(border=True, height=420):
+            st.subheader("Projetos por Tipo")
+            barras_empilhadas_horizontais(
+                *dados_grafico_barras(df_filtrado, "tipo_projeto", "id", "status_projeto", _agg="count"),
+                tamanho="350px",
+            )
 
-        st.markdown("---")
-        st.subheader("☁️ Nuvem de Habilidades")
-        skills_exp = colunas_por_delimitadores(df_filtrado, "skills", ";")
-        contagem_skills = skills_exp["value"].value_counts() if not skills_exp.empty else pd.Series(dtype=int)
-        nuvem = [
-            {"name": k, "value": int(v)}
-            for k, v in contagem_skills.items()
-            if k and str(k).strip() and str(k) != "None"
-        ]
-        if nuvem:
-            mapa_palavras(nuvem)
-        else:
-            st.info("Sem habilidades registradas nos projetos filtrados.")
+        with st.container(border=True, height=420):
+
+                st.subheader("☁️ Nuvem de Habilidades")
+                skills_exp = colunas_por_delimitadores(df_filtrado, "skills", ";")
+                contagem_skills = skills_exp["value"].value_counts() if not skills_exp.empty else pd.Series(dtype=int)
+                nuvem = [
+                    {"name": k, "value": int(v)}
+                    for k, v in contagem_skills.items()
+                    if k and str(k).strip() and str(k) != "None"
+                ]
+                if nuvem:
+                    mapa_palavras(nuvem)
+                else:
+                    st.info("Sem habilidades registradas nos projetos filtrados.")
 
 
 def render(ctx: AppContext) -> None:
@@ -183,5 +192,6 @@ def render(ctx: AppContext) -> None:
         return
 
     _metricas(df_projetos, df_filtrado)
-    _graficos_principais(df_filtrado)
     _analises_adicionais(df_filtrado)
+    _graficos_principais(df_filtrado)
+    
