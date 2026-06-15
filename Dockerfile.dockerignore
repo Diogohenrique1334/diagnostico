@@ -1,0 +1,21 @@
+# Dockerignore escopado a este Dockerfile (BuildKit).
+# Patterns relativos à RAIZ DO CONTEXTO (a pasta pai = Projetos).
+# Ignora tudo no contexto e re-inclui só a app e a biblioteca local.
+
+*
+
+!diagnostico
+!baltazar
+
+# Lixo / pesado / segredos dentro do que foi re-incluído
+**/.git
+**/.github
+**/__pycache__
+**/*.pyc
+**/.ipynb_checkpoints
+diagnostico/myenv
+diagnostico/.env
+diagnostico/backend/db/banco_projetos.db
+diagnostico/backend/db/alembic/_archived_sqlite_versions
+baltazar.egg-info
+baltazar/tests

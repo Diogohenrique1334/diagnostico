@@ -1,6 +1,8 @@
-import win32com.client as win32
-import pythoncom  # <--- IMPORTANTE: Importa a biblioteca para o controle COM
 from backend.models import Projeto, StatusProjeto
+
+# pywin32 (Outlook COM) é Windows-only. O import é feito de forma "lazy" dentro
+# de enviar_email_status para que o módulo continue importável em Linux/Docker
+# (onde o envio de e-mail simplesmente não acontece).
 
 def get_email_content(projeto: Projeto, novo_status: StatusProjeto):
     """
@@ -94,12 +96,11 @@ def enviar_email_status(projeto: Projeto, novo_status: StatusProjeto):
     # Cliente principal
     if projeto.cliente.email:
         destinatarios.append(projeto.cliente.email)
-    
-    # E-mails adicionais
-    if projeto.emails_adicionais:
-        emails_adicionais = [email.strip() for email in projeto.emails_adicionais.split(',') if email.strip()]
-        destinatarios.extend(emails_adicionais)
-    
+
+    # E-mails adicionais (relationship: lista de ProjetoEmail)
+    ccs = [pe.email.strip() for pe in projeto.emails_adicionais if pe.email and pe.email.strip()]
+    destinatarios.extend(ccs)
+
     if not destinatarios:
         print(f"AVISO: Nenhum e-mail encontrado para o projeto '{projeto.nome_projeto}'. E-mail não enviado.")
         return
@@ -110,6 +111,10 @@ def enviar_email_status(projeto: Projeto, novo_status: StatusProjeto):
         return
 
     try:
+        # Import lazy: só funciona no Windows com Outlook (não existe em Linux/Docker).
+        import pythoncom
+        import win32com.client as win32
+
         pythoncom.CoInitialize()
         print(f"Tentando enviar e-mail para {len(destinatarios)} destinatário(s): {', '.join(destinatarios)}")
         outlook = win32.Dispatch('outlook.application')
@@ -119,10 +124,8 @@ def enviar_email_status(projeto: Projeto, novo_status: StatusProjeto):
         email.To = projeto.cliente.email  # Cliente principal
         
         # Adicionar e-mails adicionais em CC
-        if projeto.emails_adicionais:
-            emails_adicionais = [email.strip() for email in projeto.emails_adicionais.split(',') if email.strip()]
-            if emails_adicionais:
-                email.CC = ";".join(emails_adicionais)
+        if ccs:
+            email.CC = ";".join(ccs)
         
         email.Subject = assunto
         email.HTMLBody = corpo_html

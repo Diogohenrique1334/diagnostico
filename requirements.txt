@@ -1,6 +1,19 @@
 streamlit
-pandas
-plotly-express
-PIL
+pandas>=2.0
+numpy
+matplotlib
+plotly
+Pillow
 pytz
+sqlalchemy[asyncio]>=2.0
+asyncpg
+pydantic-settings
+alembic
+openpyxl
+streamlit-echarts
+requests
+# pywin32 só no Windows (Outlook COM). No Linux/Docker o pip ignora esta linha.
+pywin32; sys_platform == 'win32'
 
+# baltazar - biblioteca local, instalar separado:
+# pip install -e "<caminho_para_Projetos>\baltazar"

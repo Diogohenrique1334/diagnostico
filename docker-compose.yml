@@ -1,0 +1,16 @@
+# Build com contexto no diretório pai (Projetos) para incluir a lib local baltazar.
+# Suba com:  docker compose up --build
+# O app conecta no Neon via DATABASE_URL (lido do .env e injetado como env var).
+
+services:
+  diagnostico:
+    build:
+      context: ..
+      dockerfile: diagnostico/Dockerfile
+    image: diagnostico:latest
+    container_name: diagnostico
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env          # DATABASE_URL, DEBUG — NÃO vai para a imagem, só em runtime
+    restart: unless-stopped

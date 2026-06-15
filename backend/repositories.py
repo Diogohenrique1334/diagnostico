@@ -1,119 +1,223 @@
-import datetime
-from sqlalchemy.orm import Session, joinedload
+"""Repositories assíncronos (SQLAlchemy async + asyncpg).
+
+Cada método abre a própria sessão (padrão adequado ao Streamlit, que re-executa
+o script a cada interação). Todas as relações acessadas pelo frontend são
+carregadas de forma eager — com async não há lazy-load fora do contexto await.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload, selectinload
+
 from backend import models
+from backend.database import async_session
 from backend.emails import enviar_email_status
-import pytz
+from backend.models import agora_brasilia
+from backend.normalizacao import (
+    normalizar_area,
+    normalizar_cargo,
+    normalizar_emails,
+    normalizar_empresa,
+    normalizar_skills,
+)
 
-class BaseRepository:
+logger = logging.getLogger(__name__)
 
-    def __init__(self, db_session: Session):
-        self.db_session = db_session
 
-    def commit(self):
-        self.db_session.commit()
-
-class ClienteRepository(BaseRepository):
-
-    def get_all(self):
-        return self.db_session.query(models.Cliente).order_by(models.Cliente.nome).all()
-
-    def create(self, cliente: models.Cliente):
-        self.db_session.add(cliente)
-        self.commit()
-        return cliente
-
-class ProdutoRepository(BaseRepository):
-
-    def get_all(self):
-        return self.db_session.query(models.Produto).order_by(models.Produto.nome_produto).all()
-
-    def create(self, produto: models.Produto):
-        self.db_session.add(produto)
-        self.commit()
-        return produto
-
-class ProjetoRepository(BaseRepository):
-    def get_all(self):
-        
-        return self.db_session.query(models.Projeto).options(
-            joinedload(models.Projeto.cliente),
-            joinedload(models.Projeto.produto),
-            joinedload(models.Projeto.validacoes),
-            joinedload(models.Projeto.historico_status) # Carrega o histórico junto
-        ).order_by(models.Projeto.id.desc()).all()
-    
-    def _get_brasilia_time(self):
-        """Retorna a data e hora atual no fuso horário de Brasília."""
-        return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
-
-    def create(self, projeto: models.Projeto):
-        
-        primeiro_historico = models.HistoricoStatusProjeto(
-            status_anterior=None,
-            status_novo=projeto.status_projeto,
-            data_mudanca=self._get_brasilia_time()
-        )
-        projeto.historico_status.append(primeiro_historico)
-        
-        self.db_session.add(projeto)
-        self.commit()
-        return projeto
-
-    def update_status(self, projeto_id: int, novo_status: models.StatusProjeto):
-        
-        projeto = self.db_session.query(models.Projeto).options(
-            joinedload(models.Projeto.cliente) 
-        ).filter(models.Projeto.id == projeto_id).first()
-        
-        if projeto and projeto.status_projeto != novo_status:
-            status_antigo = projeto.status_projeto
-            
-            # Cria o novo registro de histórico
-            novo_historico = models.HistoricoStatusProjeto(
-                status_anterior=status_antigo,
-                status_novo=novo_status,
-                data_mudanca=self._get_brasilia_time(),
-                projeto=projeto
-            )
-            self.db_session.add(novo_historico)
-            
-            # Atualiza o status do projeto
-            projeto.status_projeto = novo_status
-            self.commit() # Salva as mudanças no banco PRIMEIRO
-
-            try:
-                enviar_email_status(projeto, novo_status)
-            except Exception as e:
-                # Mesmo que o e-mail falhe, a aplicação não quebra,
-                # pois o status já foi salvo no banco.
-                print(f"ERRO no processo de e-mail, mas o status foi atualizado. Erro: {e}")
-            
-            return projeto
+async def _get_or_create(session, model, nome: str | None):
+    """Busca uma linha lookup por nome; cria se não existir. None → None."""
+    if nome is None:
         return None
-    
-    def update_skills(self, projeto_id: int, skills_string: str or None):
-        """
-        Encontra um projeto pelo ID e atualiza sua lista de habilidades.
-        """
-        projeto = self.db_session.query(models.Projeto).filter(models.Projeto.id == projeto_id).first()
-        if projeto:
-            projeto.skills = skills_string
-            self.commit()
-        return projeto
-    
-    def update_emails_adicionais(self, projeto_id: int, emails_string: str or None):
-        """
-        Encontra um projeto pelo ID e atualiza sua lista de e-mails adicionais.
-        """
-        projeto = self.db_session.query(models.Projeto).filter(models.Projeto.id == projeto_id).first()
-        if projeto:
-            projeto.emails_adicionais = emails_string
-            self.commit()
-        return projeto
+    res = await session.execute(select(model).where(model.nome == nome))
+    obj = res.scalar_one_or_none()
+    if obj is None:
+        obj = model(nome=nome)
+        session.add(obj)
+        await session.flush()
+    return obj
 
-class ValidacaoRepository(BaseRepository):
-    
-    def create(self, validacao: models.ValidacaoProjeto):
-        self.db_session.add(validacao)
-        self.commit()
-        return validacao
+
+class ClienteRepository:
+    async def get_all(self) -> list[models.Cliente]:
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Cliente)
+                .options(
+                    joinedload(models.Cliente.area),
+                    joinedload(models.Cliente.cargo),
+                )
+                .order_by(models.Cliente.nome)
+            )
+            return list(res.scalars().all())
+
+    async def create(
+        self,
+        *,
+        nome: str,
+        email: str | None,
+        empresa: str | None,
+        cargo: str | None,
+        area: str | None,
+        nivel_estatistico: models.NivelConhecimento | None,
+        usuario_final: bool,
+    ) -> int:
+        async with async_session() as s:
+            area_obj = await _get_or_create(s, models.Area, normalizar_area(area))
+            cargo_obj = await _get_or_create(s, models.Cargo, normalizar_cargo(cargo))
+            cliente = models.Cliente(
+                nome=(nome or "").strip().lower() or None,
+                email=(email or "").strip().lower() or None,
+                empresa=normalizar_empresa(empresa),
+                nivel_estatistico=nivel_estatistico,
+                usuario_final=usuario_final,
+                area=area_obj,
+                cargo=cargo_obj,
+            )
+            s.add(cliente)
+            await s.commit()
+            return cliente.id
+
+
+class ProdutoRepository:
+    async def get_all(self) -> list[models.Produto]:
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Produto).order_by(models.Produto.nome_produto)
+            )
+            return list(res.scalars().all())
+
+    async def create(self, nome_produto: str) -> int:
+        async with async_session() as s:
+            produto = models.Produto(nome_produto=(nome_produto or "").strip().lower())
+            s.add(produto)
+            await s.commit()
+            return produto.id
+
+
+class ProjetoRepository:
+    def _eager_options(self):
+        return (
+            joinedload(models.Projeto.cliente).joinedload(models.Cliente.area),
+            joinedload(models.Projeto.cliente).joinedload(models.Cliente.cargo),
+            joinedload(models.Projeto.produto),
+            selectinload(models.Projeto.validacoes),
+            selectinload(models.Projeto.historico_status),
+            selectinload(models.Projeto.skills),
+            selectinload(models.Projeto.emails_adicionais),
+        )
+
+    async def get_all(self) -> list[models.Projeto]:
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto)
+                .options(*self._eager_options())
+                .order_by(models.Projeto.id.desc())
+            )
+            return list(res.scalars().unique().all())
+
+    async def create(self, dados_projeto: dict, skills=None) -> int:
+        """Cria um projeto + histórico inicial + skills normalizadas."""
+        async with async_session() as s:
+            projeto = models.Projeto(**dados_projeto)
+            projeto.historico_status.append(
+                models.HistoricoStatusProjeto(
+                    status_anterior=None,
+                    status_novo=projeto.status_projeto,
+                    data_mudanca=agora_brasilia(),
+                )
+            )
+            for skill in normalizar_skills(skills):
+                projeto.skills.append(models.ProjetoSkill(skill=skill))
+            s.add(projeto)
+            await s.commit()
+            return projeto.id
+
+    async def update_status(
+        self, projeto_id: int, novo_status: models.StatusProjeto
+    ) -> bool:
+        """Atualiza o status, registra histórico e dispara e-mail (Outlook)."""
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto)
+                .options(
+                    joinedload(models.Projeto.cliente),
+                    selectinload(models.Projeto.emails_adicionais),
+                )
+                .where(models.Projeto.id == projeto_id)
+            )
+            projeto = res.scalars().unique().one_or_none()
+
+            if projeto is None or projeto.status_projeto == novo_status:
+                return False
+
+            s.add(
+                models.HistoricoStatusProjeto(
+                    status_anterior=projeto.status_projeto,
+                    status_novo=novo_status,
+                    data_mudanca=agora_brasilia(),
+                    id_projeto=projeto.id,
+                )
+            )
+            projeto.status_projeto = novo_status
+            await s.commit()
+
+        # E-mail fora da sessão; atributos já estão carregados (expire_on_commit=False).
+        try:
+            enviar_email_status(projeto, novo_status)
+        except Exception as e:
+            logger.error(
+                "Falha ao enviar e-mail após atualização de status. "
+                "Status salvo. Erro: %s",
+                e,
+            )
+        return True
+
+    async def set_skills(self, projeto_id: int, skills) -> None:
+        """Substitui completamente as skills de um projeto."""
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto)
+                .options(selectinload(models.Projeto.skills))
+                .where(models.Projeto.id == projeto_id)
+            )
+            projeto = res.scalars().unique().one_or_none()
+            if projeto is None:
+                return
+            projeto.skills.clear()
+            for skill in normalizar_skills(skills):
+                projeto.skills.append(models.ProjetoSkill(skill=skill))
+            await s.commit()
+
+    async def set_emails(self, projeto_id: int, emails) -> None:
+        """Substitui completamente os e-mails adicionais de um projeto."""
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto)
+                .options(selectinload(models.Projeto.emails_adicionais))
+                .where(models.Projeto.id == projeto_id)
+            )
+            projeto = res.scalars().unique().one_or_none()
+            if projeto is None:
+                return
+            projeto.emails_adicionais.clear()
+            for email in normalizar_emails(emails):
+                projeto.emails_adicionais.append(models.ProjetoEmail(email=email))
+            await s.commit()
+
+
+class ValidacaoRepository:
+    async def create(
+        self, *, o_que_sentiu_falta: str, o_que_tiraria: str, id_projeto: int
+    ) -> int:
+        async with async_session() as s:
+            validacao = models.ValidacaoProjeto(
+                o_que_sentiu_falta=o_que_sentiu_falta,
+                o_que_tiraria=o_que_tiraria,
+                id_projeto=id_projeto,
+            )
+            s.add(validacao)
+            await s.commit()
+            return validacao.id
