@@ -15,9 +15,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app/diagnostico
 
 # 1) Dependências primeiro (camada cacheável enquanto requirements não muda).
-#    pywin32 é ignorado no Linux pelo marker `sys_platform == 'win32'`.
+#    - pywin32 é ignorado no Linux pelo marker `sys_platform == 'win32'`.
+#    - A linha do baltazar (git+) é removida: no Docker usamos a cópia local
+#      via PYTHONPATH (passo 2), sem depender do repositório estar pushado.
 COPY diagnostico/requirements.txt ./requirements.txt
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip \
+    && grep -vi '^baltazar' requirements.txt > requirements.docker.txt \
+    && pip install -r requirements.docker.txt
 
 # 2) Biblioteca local baltazar — fica importável via PYTHONPATH=/app
 #    (não precisa de pip install; evita o `where=['..']` do pyproject).

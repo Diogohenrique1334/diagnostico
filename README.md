@@ -113,6 +113,32 @@ Detalhes:
 - O `Dockerfile.dockerignore` mantém o contexto enxuto (exclui `myenv`, `.git`,
   `.env`, demais projetos da pasta pai).
 
+## Deploy no Streamlit Community Cloud
+
+1. **Suba os dois repositórios no GitHub:**
+   - `diagnostico` (esta app)
+   - `baltazar` (a biblioteca) — o `requirements.txt` a instala via
+     `git+https://github.com/.../baltazar.git@main`, então ela **precisa estar
+     pushada** (e o pyproject já está corrigido para `pip install`).
+
+2. **No Streamlit Cloud**, aponte para `frontend/main.py` e configure os
+   **Secrets** (App settings → Secrets) com o conteúdo de
+   [.streamlit/secrets.toml.example](.streamlit/secrets.toml.example):
+
+   ```toml
+   DATABASE_URL = "postgresql+asyncpg://USUARIO:SENHA@HOST-pooler.../neondb?ssl=require"
+   DEBUG = false
+   ```
+
+   O `config.py` lê o `DATABASE_URL` do ambiente, do `.env` ou do `st.secrets`
+   (nessa ordem), então funciona no Cloud sem `.env`.
+
+3. **Banco:** é o **mesmo Neon** de dev/Docker — rodar local, no Docker ou no
+   Cloud usa a mesma base (a `DATABASE_URL` é a fonte única da verdade).
+
+> **E-mail (Outlook/pywin32):** não funciona no Cloud (Linux). O app roda
+> normal; só o envio de e-mail de status não acontece — igual no Docker.
+
 ## Migrações (Alembic)
 
 ```bash

@@ -1,8 +1,11 @@
 __pycache__/
 *.pyc
 .env
+.streamlit/secrets.toml
 banco.db
 alimentar_banco_planilha.py
 limpar_banco.py
 *.ipynb
 myenv/
+build/
+*.egg-info/

@@ -15,5 +15,9 @@ requests
 # pywin32 só no Windows (Outlook COM). No Linux/Docker o pip ignora esta linha.
 pywin32; sys_platform == 'win32'
 
-# baltazar - biblioteca local, instalar separado:
-# pip install -e "<caminho_para_Projetos>\baltazar"
+# baltazar (biblioteca local). No Streamlit Cloud é instalada do GitHub.
+# - Cloud/produção: usa esta linha (precisa do baltazar pushado no GitHub).
+# - Dev local: use editable -> pip install -e "<caminho_para_Projetos>\baltazar"
+#   (o editable instalado tem prioridade; reinstale-o se rodar este requirements).
+# - Docker: o Dockerfile ignora esta linha e usa a cópia local via PYTHONPATH.
+baltazar @ git+https://github.com/Diogohenrique1334/baltazar.git@main
