@@ -109,6 +109,7 @@ def _distribuicao(df: pd.DataFrame) -> None:
         barras_empilhadas_horizontais(
             *lista_categorica_complexa(df, "tipo_projeto", "id", "status_projeto", _agg="count"),
             tamanho="360px",
+            rotacao=35,  # tipos de projeto têm nomes longos — rótulos vazavam no deploy
         )
 
     with c2.container(border=True, height=450):
