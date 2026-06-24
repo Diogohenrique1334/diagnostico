@@ -25,23 +25,33 @@ STATUS_TRATADO = {
 }
 
 
-def render_filtros(df_projetos: pd.DataFrame) -> pd.DataFrame:
-    """Desenha os filtros na sidebar e retorna o DataFrame filtrado."""
+def render_filtros(df_projetos: pd.DataFrame, publico: bool = False) -> pd.DataFrame:
+    """Desenha os filtros na sidebar e retorna o DataFrame filtrado.
+
+    `publico=True` (Dashboard sem login) oculta os filtros que listam dados
+    sensíveis em dropdown — Projeto e Empresa. O nome do Cliente permanece.
+    """
     st.sidebar.title("Filtros do Dashboard")
     vazio = df_projetos.empty
 
-    projetos_filtro = st.sidebar.multiselect(
-        "Projeto",
-        options=sorted(df_projetos["nome_projeto"].unique()) if not vazio else [],
-    )
+    if publico:
+        projetos_filtro: list = []
+    else:
+        projetos_filtro = st.sidebar.multiselect(
+            "Projeto",
+            options=sorted(df_projetos["nome_projeto"].unique()) if not vazio else [],
+        )
     clientes_filtro = st.sidebar.multiselect(
         "Cliente",
         options=sorted(df_projetos["nome_cliente"].unique()) if not vazio else [],
     )
-    empresa_clientes_filtro = st.sidebar.multiselect(
-        "Empresa",
-        options=sorted(df_projetos["empresa_cliente"].unique()) if not vazio else [],
-    )
+    if publico:
+        empresa_clientes_filtro: list = []
+    else:
+        empresa_clientes_filtro = st.sidebar.multiselect(
+            "Empresa",
+            options=sorted(df_projetos["empresa_cliente"].unique()) if not vazio else [],
+        )
     area_clientes_filtro = st.sidebar.multiselect(
         "Area do cliente",
         options=sorted(df_projetos["Area_cliente"].dropna().unique()) if not vazio else [],
