@@ -1,0 +1,8 @@
+# Tema dark fixo do app (não depende do toggle do usuário).
+[theme]
+base = "dark"
+primaryColor = "#18990b"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#161B22"
+textColor = "#E6E6E6"
+font = "sans serif"

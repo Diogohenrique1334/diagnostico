@@ -19,6 +19,7 @@ from sqlalchemy import (
     Column,
     String,
     Integer,
+    Float,
     Boolean,
     Enum,
     ForeignKey,
@@ -209,6 +210,10 @@ class Projeto(Base):
     stakeholders = Column(String, nullable=True)           # quem usa/aprova (sponsor, usuários, quem barra)
     restricoes = Column(String, nullable=True)             # prazo, orçamento, LGPD, infra
     tentativas_anteriores = Column(String, nullable=True)  # já tentaram antes? o que aconteceu
+
+    # Horas efetivamente investidas no MVP. Alimenta o estimador por similaridade
+    # (backend/estimativa.py) e a geração de propostas. None = ainda não medido.
+    horas_mvp = Column(Float, nullable=True)
 
     tipo_projeto = Column(
         Enum(TipoProjeto, native_enum=False), nullable=True, default=TipoProjeto.OUTROS

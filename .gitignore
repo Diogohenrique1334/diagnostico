@@ -9,3 +9,5 @@ limpar_banco.py
 myenv/
 build/
 *.egg-info/
+.claude
+claude.

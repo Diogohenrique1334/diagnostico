@@ -15,6 +15,7 @@ from PIL import Image  # noqa: E402
 
 from frontend.servicos import carregar_contexto  # noqa: E402
 from frontend.filtros import render_filtros  # noqa: E402
+from frontend.utils import tema  # noqa: E402
 from frontend.paginas import (  # noqa: E402
     dashboard,
     diagnostico,
@@ -24,6 +25,7 @@ from frontend.paginas import (  # noqa: E402
 )
 
 st.set_page_config(page_title="Gestão de Projetos", layout="wide", page_icon="📊")
+tema.inject_css()  # tema escuro + cards + foto redonda (global em todas as páginas)
 
 # Mapa de navegação: rótulo -> função render(ctx) da página.
 PAGINAS = {
@@ -39,7 +41,7 @@ ctx = carregar_contexto()
 
 # --- Sidebar: imagem + navegação ---
 try:
-    st.sidebar.image(Image.open("foto_diogo.jpg"), caption="-------------------------------------")
+    st.sidebar.image(Image.open("foto_diogo.jpg"))
 except FileNotFoundError:
     st.sidebar.info("Imagem 'foto_diogo.jpg' não encontrada.")
 

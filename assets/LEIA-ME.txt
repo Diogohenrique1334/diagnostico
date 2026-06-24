@@ -1,0 +1,26 @@
+(OPCIONAL) Imagem do CICLO DE VIDA para o e-mail de início de projeto.
+
+O e-mail já desenha o ciclo de vida em HTML (padrão) — funciona em qualquer
+cliente, inclusive com imagens bloqueadas. Não precisa de imagem.
+
+Se MESMO ASSIM quiser usar a sua arte em vez do HTML, salve aqui como:
+
+    ciclo_de_vida.png
+
+Quando esse arquivo existir, ele é embutido (inline) no lugar do ciclo em HTML.
+Atenção: imagens em e-mail costumam vir bloqueadas por padrão no cliente do
+destinatário (ele precisa clicar em "baixar imagens").
+
+
+-------------------------------------------------------------------------------
+ASSINATURA nas propostas de cliente (Simples / Avançada)
+
+Salve sua assinatura aqui como:
+
+    assinatura.png
+
+Ela é desenhada acima da linha "Diogo Oliveira" no bloco de Aceite do PDF.
+Recomendado: PNG com FUNDO TRANSPARENTE, traço escuro, ~600x180 px.
+Na geração da proposta há a opção "Incluir minha assinatura" (ligada por padrão).
+Se o arquivo não existir, a linha fica em branco para assinar à mão.
+

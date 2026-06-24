@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from backend import models
 from backend.database import async_session
-from backend.emails import enviar_email_status
+from backend.emails import enviar_email_inicio_projeto, enviar_email_status
 from backend.models import agora_brasilia
 from backend.normalizacao import (
     normalizar_area,
@@ -186,9 +186,48 @@ class ProjetoRepository:
             projeto = res.scalars().unique().one_or_none()
             if projeto is None:
                 return
-            projeto.skills.clear()
-            for skill in normalizar_skills(skills):
+            # Diff em vez de clear()+re-add: evita DELETE+INSERT da MESMA linha no
+            # mesmo flush (o INSERT vinha antes do DELETE e violava uq_projeto_skill).
+            novas = set(normalizar_skills(skills))
+            atuais = {ps.skill: ps for ps in projeto.skills}
+            for skill, ps in atuais.items():
+                if skill not in novas:
+                    projeto.skills.remove(ps)
+            for skill in novas - atuais.keys():
                 projeto.skills.append(models.ProjetoSkill(skill=skill))
+            await s.commit()
+
+    async def enviar_email_inicio(self, projeto_id: int, dias: int) -> str | None:
+        """Carrega o projeto (cliente + e-mails) e dispara o e-mail de início.
+
+        Retorna o endereço de destino (To) em caso de sucesso, ou None se o
+        projeto não existir. Erros de envio são propagados ao chamador.
+        """
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto)
+                .options(
+                    joinedload(models.Projeto.cliente),
+                    selectinload(models.Projeto.emails_adicionais),
+                )
+                .where(models.Projeto.id == projeto_id)
+            )
+            projeto = res.scalars().unique().one_or_none()
+        if projeto is None:
+            return None
+        # Fora da sessão (atributos já carregados; expire_on_commit=False).
+        return enviar_email_inicio_projeto(projeto, dias)
+
+    async def set_horas_mvp(self, projeto_id: int, horas: float | None) -> None:
+        """Registra (ou limpa) as horas efetivamente investidas no MVP."""
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto).where(models.Projeto.id == projeto_id)
+            )
+            projeto = res.scalars().unique().one_or_none()
+            if projeto is None:
+                return
+            projeto.horas_mvp = horas
             await s.commit()
 
     async def set_emails(self, projeto_id: int, emails) -> None:
@@ -202,8 +241,13 @@ class ProjetoRepository:
             projeto = res.scalars().unique().one_or_none()
             if projeto is None:
                 return
-            projeto.emails_adicionais.clear()
-            for email in normalizar_emails(emails):
+            # Diff (mesmo motivo do set_skills: evita violar uq_projeto_email).
+            novos = set(normalizar_emails(emails))
+            atuais = {pe.email: pe for pe in projeto.emails_adicionais}
+            for email, pe in atuais.items():
+                if email not in novos:
+                    projeto.emails_adicionais.remove(pe)
+            for email in novos - atuais.keys():
                 projeto.emails_adicionais.append(models.ProjetoEmail(email=email))
             await s.commit()
 

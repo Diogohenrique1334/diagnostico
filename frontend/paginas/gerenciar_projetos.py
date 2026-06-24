@@ -1,15 +1,31 @@
 """Página: Gerenciar Projetos (busca, export, paginação e edição)."""
 
 import io
+import re
+from pathlib import Path
 
 import pandas as pd
 import pytz
 import streamlit as st
 
 from backend.models import StatusProjeto, SkillProjeto
+from backend.estimativa import estimar_horas
+from backend.propostas import (
+    DadosProposta,
+    ModeloProposta,
+    formatar_moeda,
+    gerar_proposta,
+    horas_para_dias,
+    numero_proposta,
+    valor_padrao,
+)
+from backend.propostas.dados import HORAS_POR_DIA, GARANTIA_PADRAO_DIAS
 from frontend.servicos import AppContext
+from frontend.utils.estimativa_ui import resumo_markdown
 
 _FUSO = pytz.timezone("America/Sao_Paulo")
+_FOTO_PATH = Path(__file__).resolve().parents[2] / "foto_diogo.jpg"
+_ASSINATURA_PATH = Path(__file__).resolve().parents[2] / "assets" / "assinatura.png"
 _COLS_EXPORT = [
     "id", "nome_projeto", "tipo_projeto", "status_projeto", "produto_projeto",
     "nome_cliente", "empresa_cliente", "Area_cliente", "nivel_cliente",
@@ -187,6 +203,157 @@ def _bloco_emails(ctx: AppContext, proj) -> None:
             st.rerun()
 
 
+def _slug(texto: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (texto or "proposta").lower()).strip("_") or "proposta"
+
+
+def _bloco_proposta(ctx: AppContext, proj) -> None:
+    st.markdown("---")
+    st.subheader("💰 Gerar Proposta")
+
+    resultado = estimar_horas(proj, ctx.todos_projetos)
+    st.markdown(resumo_markdown(resultado), unsafe_allow_html=True)
+    if proj.horas_mvp:
+        st.caption(f"Horas reais já registradas neste projeto: {proj.horas_mvp:.0f}h")
+
+    horas_ref = proj.horas_mvp or resultado.horas
+
+    modelos = {m.value: m for m in ModeloProposta}
+    escolha = st.segmented_control(
+        "Modelo de proposta", options=list(modelos.keys()),
+        default=ModeloProposta.SIMPLES.value, key=f"modelo_{proj.id}",
+    )
+    modelo = modelos.get(escolha or ModeloProposta.SIMPLES.value)
+    is_dias = modelo is ModeloProposta.DIAS
+
+    incluir_foto = False
+    incluir_assinatura = False
+    estimado = True
+    if is_dias:
+        # Projeto do emprego formal: sem dinheiro, só previsão de dias da 1ª versão.
+        col1, col2 = st.columns(2)
+        quantidade = col1.number_input(
+            "Dias previstos (1ª versão)", min_value=0.0, step=1.0,
+            value=float(horas_para_dias(horas_ref)), key=f"qtd_{proj.id}_{modelo.name}",
+        )
+        col2.metric("Previsão de entrega", f"{quantidade:.0f} dias")
+        valor = 0.0
+    else:
+        modo = st.radio(
+            "Valores", ["Estimados", "Horas já realizadas"], horizontal=True,
+            key=f"modo_{proj.id}_{modelo.name}",
+            help="No diagnóstico use 'Estimados'; após a apresentação do MVP, 'Horas realizadas'.",
+        )
+        estimado = modo == "Estimados"
+        if not estimado and proj.horas_mvp:
+            qtd_default = float(round(proj.horas_mvp))
+        else:
+            qtd_default = float(round(horas_ref))
+
+        col1, col2, col3 = st.columns(3)
+        valor = col1.number_input(
+            "Valor por hora (R$)", min_value=0.0, step=10.0,
+            value=float(valor_padrao(modelo)), key=f"valor_{proj.id}_{modelo.name}",
+        )
+        quantidade = col2.number_input(
+            "Horas do MVP" if estimado else "Horas realizadas", min_value=0.0, step=1.0,
+            value=qtd_default, key=f"qtd_{proj.id}_{modelo.name}_{estimado}",
+        )
+        col3.metric("Total" + (" estimado" if estimado else ""),
+                    formatar_moeda(valor * quantidade))
+        cfoto, cass = st.columns(2)
+        incluir_foto = cfoto.checkbox(
+            "Incluir minha foto na capa", value=True, key=f"foto_{proj.id}")
+        incluir_assinatura = cass.checkbox(
+            "Incluir minha assinatura", value=True, key=f"assin_{proj.id}",
+            help="Usa assets/assinatura.png acima da linha de assinatura, se existir.")
+
+    escopo = []
+    if not is_dias:
+        escopo_txt = st.text_area(
+            "Escopo / entregáveis (um por linha)", key=f"escopo_{proj.id}",
+            placeholder="Pipeline de ingestão\nDashboard interativo\nDocumentação",
+        )
+        escopo = [linha.strip() for linha in escopo_txt.splitlines() if linha.strip()]
+
+    # Extras das propostas de cliente (nº, garantia, premissas, exclusões)
+    numero = None
+    garantia = None
+    premissas, exclusoes = [], []
+    if not is_dias:
+        with st.expander("⚙️ Mais opções da proposta"):
+            numero = st.text_input(
+                "Nº da proposta", value=numero_proposta(proj.id), key=f"num_{proj.id}")
+            garantia = st.number_input(
+                "Garantia / suporte (dias)", min_value=0, step=1,
+                value=GARANTIA_PADRAO_DIAS, key=f"gar_{proj.id}")
+            prem_txt = st.text_area(
+                "Premissas (uma por linha, vazio = padrão)", key=f"prem_{proj.id}")
+            excl_txt = st.text_area(
+                "Exclusões (uma por linha, vazio = padrão)", key=f"excl_{proj.id}")
+            premissas = [l.strip() for l in prem_txt.splitlines() if l.strip()]
+            exclusoes = [l.strip() for l in excl_txt.splitlines() if l.strip()]
+
+    foto_path = str(_FOTO_PATH) if incluir_foto and _FOTO_PATH.exists() else None
+    assinatura_path = (
+        str(_ASSINATURA_PATH) if incluir_assinatura and _ASSINATURA_PATH.exists() else None
+    )
+
+    col_save, col_action = st.columns(2)
+    if col_save.button(
+        "💾 Salvar horas reais", key=f"save_horas_{proj.id}",
+        help="Grava as horas efetivamente gastas — alimenta o estimador de projetos futuros.",
+    ):
+        horas_reais = quantidade * HORAS_POR_DIA if is_dias else quantidade
+        ctx.run_async(ctx.projeto_repo.set_horas_mvp(proj.id, float(horas_reais)))
+        st.success(f"Horas registradas: {horas_reais:.0f}h")
+        st.rerun()
+
+    if is_dias:
+        # Emprego formal: envia o e-mail de início direto (Outlook), como as
+        # comunicações de mudança de status. Sem PDF, sem copiar/colar.
+        if col_action.button("📧 Enviar e-mail de início", key=f"send_{proj.id}", type="primary"):
+            try:
+                to = ctx.run_async(ctx.projeto_repo.enviar_email_inicio(proj.id, int(quantidade)))
+                if to:
+                    st.success(f"E-mail de início enviado para {to}. "
+                               "Confira em *Itens Enviados* (Outlook clássico).")
+                else:
+                    st.error("Projeto não encontrado.")
+            except Exception as e:
+                st.error(f"Falha ao enviar o e-mail: {e}")
+    else:
+        if col_action.button("📄 Gerar proposta", key=f"gen_{proj.id}", type="primary"):
+            dados = DadosProposta(
+                modelo=modelo,
+                nome_projeto=proj.nome_projeto,
+                cliente=(proj.cliente.nome or "").title(),
+                tipo_projeto=proj.tipo_projeto.value if proj.tipo_projeto else "Outros",
+                valor_unitario=valor,
+                quantidade=quantidade,
+                escopo=escopo,
+                objetivo=proj.objetivo,
+                foto_path=foto_path,
+                assinatura_path=assinatura_path,
+                numero=numero or None,
+                valores_estimados=estimado,
+                garantia_dias=int(garantia) if garantia else None,
+                premissas=premissas,
+                exclusoes=exclusoes,
+            )
+            st.session_state[f"pdf_{proj.id}"] = {
+                "bytes": gerar_proposta(modelo, dados),
+                "nome": f"proposta_{_slug(proj.nome_projeto)}_{modelo.name.lower()}.pdf",
+            }
+
+    pdf_data = st.session_state.get(f"pdf_{proj.id}")
+    if pdf_data and not is_dias:
+        st.download_button(
+            "⬇️ Baixar proposta (PDF)", data=pdf_data["bytes"], file_name=pdf_data["nome"],
+            mime="application/pdf", key=f"dl_{proj.id}",
+        )
+
+
 def _render_projeto(ctx: AppContext, proj) -> None:
     titulo = f"**{proj.nome_projeto}** (Status: {proj.status_projeto.value})"
     with st.expander(titulo):
@@ -196,6 +363,7 @@ def _render_projeto(ctx: AppContext, proj) -> None:
         _bloco_skills(ctx, proj)
         _bloco_validacoes(ctx, proj)
         _bloco_emails(ctx, proj)
+        _bloco_proposta(ctx, proj)
 
 
 def render(ctx: AppContext) -> None:

@@ -10,6 +10,7 @@ asyncpg
 pydantic-settings
 alembic
 openpyxl
+reportlab
 streamlit-echarts
 requests
 # pywin32 só no Windows (Outlook COM). No Linux/Docker o pip ignora esta linha.
