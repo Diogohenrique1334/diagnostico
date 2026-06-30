@@ -23,7 +23,7 @@ from baltazar.graficos.graficos_streamlit.graficos import (
     barras_empilhadas_horizontais,
 )
 
-_INATIVOS = ["Projeto Finalizado", "CANCELADO"]
+_INATIVOS = ["Projeto Finalizado", "Cancelado"]
 _CORES_VERDE = ["#0E5E07", "#18990b", "#37C72B", "#7BD66F"]   # gradiente p/ funil
 _ESCALA_VERDE = ["#15311b", "#18990b"]                        # heatmap
 _ESCALA_VERMELHA = ["#E23B2E", "#3a1a1a"]                     # calendário (oscilação)

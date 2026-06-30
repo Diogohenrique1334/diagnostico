@@ -82,6 +82,30 @@ def _bloco_status(ctx: AppContext, proj) -> None:
             st.rerun()
 
 
+def _bloco_data_inicio(ctx: AppContext, proj) -> None:
+    """Permite informar/corrigir a data de início (cadastro retroativo).
+
+    A data informada tem prioridade sobre a 1ª mudança de status no calendário
+    e no cycle time. Sem valor manual, mostra a data derivada do histórico.
+    """
+    atual = getattr(proj, "data_inicio", None)
+    if atual is None and proj.historico_status:
+        atual = min(h.data_mudanca for h in proj.historico_status).date()
+
+    col_data, col_btn = st.columns([2, 1])
+    nova = col_data.date_input(
+        "📅 Data de início (cadastro retroativo)",
+        value=atual, format="DD/MM/YYYY", key=f"dt_inicio_{proj.id}",
+        help="Use para projetos cadastrados depois da data real de início. "
+             "Afeta o calendário e o tempo de entrega.",
+    )
+    col_btn.text(""); col_btn.text("")
+    if col_btn.button("Salvar início", key=f"btn_dtini_{proj.id}", use_container_width=True):
+        ctx.run_async(ctx.projeto_repo.set_data_inicio(proj.id, nova))
+        st.success("Data de início atualizada!")
+        st.rerun()
+
+
 def _linha(label: str, valor) -> None:
     """Exibe uma linha de detalhe apenas se houver conteúdo."""
     if valor is None or (isinstance(valor, str) and not valor.strip()):
@@ -358,6 +382,7 @@ def _render_projeto(ctx: AppContext, proj) -> None:
     titulo = f"**{proj.nome_projeto}** (Status: {proj.status_projeto.value})"
     with st.expander(titulo):
         _bloco_status(ctx, proj)
+        _bloco_data_inicio(ctx, proj)
         _bloco_detalhes(proj)
         _bloco_historico(proj)
         _bloco_skills(ctx, proj)

@@ -230,6 +230,22 @@ class ProjetoRepository:
             projeto.horas_mvp = horas
             await s.commit()
 
+    async def set_data_inicio(self, projeto_id: int, data_inicio) -> None:
+        """Define (ou limpa) a data de início informada manualmente do projeto.
+
+        Aceita um datetime.date (ou None para voltar a usar o histórico de status
+        como referência de início).
+        """
+        async with async_session() as s:
+            res = await s.execute(
+                select(models.Projeto).where(models.Projeto.id == projeto_id)
+            )
+            projeto = res.scalars().unique().one_or_none()
+            if projeto is None:
+                return
+            projeto.data_inicio = data_inicio
+            await s.commit()
+
     async def set_emails(self, projeto_id: int, emails) -> None:
         """Substitui completamente os e-mails adicionais de um projeto."""
         async with async_session() as s:

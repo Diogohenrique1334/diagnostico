@@ -10,4 +10,5 @@ myenv/
 build/
 *.egg-info/
 .claude
-claude.
+CLAUDE.md
+artigo_diagnostico.md

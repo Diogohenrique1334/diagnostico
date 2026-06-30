@@ -20,7 +20,7 @@ STATUS_TRATADO = {
     "Ajustes no Projeto": "Ativo",
     "Criação da Documentação": "Ativo",
     "Ajustes Finos": "Ativo",
-    "CANCELADO": "Inativo",
+    "Cancelado": "Inativo",
     "Projeto Finalizado": "Inativo",
 }
 
@@ -52,10 +52,13 @@ def render_filtros(df_projetos: pd.DataFrame, publico: bool = False) -> pd.DataF
             "Empresa",
             options=sorted(df_projetos["empresa_cliente"].unique()) if not vazio else [],
         )
-    area_clientes_filtro = st.sidebar.multiselect(
-        "Area do cliente",
-        options=sorted(df_projetos["Area_cliente"].dropna().unique()) if not vazio else [],
-    )
+    if publico:
+        area_clientes_filtro: list = []
+    else:   
+        area_clientes_filtro = st.sidebar.multiselect(
+            "Area do cliente",
+            options=sorted(df_projetos["Area_cliente"].dropna().unique()) if not vazio else [],
+        )
     status_filtro = st.sidebar.multiselect(
         "Status do Projeto",
         options=sorted(df_projetos["status_projeto"].map(STATUS_TRATADO).unique()) if not vazio else [],

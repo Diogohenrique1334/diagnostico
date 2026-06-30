@@ -1,18 +1,23 @@
 """Estimador de horas de MVP por similaridade entre projetos.
 
-Lógica pura — recebe objetos `Projeto` já carregados (não acessa Streamlit nem
-o banco). A ideia: dado um projeto-alvo (tipo + skills), encontrar os projetos
-passados mais parecidos que já têm `horas_mvp` registrado e estimar as horas
-como a média ponderada pela similaridade. Sem histórico de horas suficiente,
-cai numa heurística por tipo de projeto + complexidade (nº de skills).
+Adaptador fino de domínio: traduz objetos `Projeto` (skills + tipo + horas) para
+o KNN genérico do Baltazar (`baltazar.ML.supervisionado.knn_similaridade`) e
+veste o resultado na interface que a UI espera. A matemática (Jaccard +
+vizinhos + média ponderada) vive no Baltazar e é reutilizável entre projetos.
 
-Similaridade = Jaccard dos conjuntos de skills, com boost quando o tipo de
-projeto coincide (mesmo tipo importa mais, mas as skills continuam pesando).
+Aqui ficam só as partes de domínio: como extrair skills/tipo de um `Projeto` e o
+fallback heurístico (horas-base por tipo + complexidade) usado quando ainda não
+há projetos semelhantes com `horas_mvp` registrado.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from baltazar.ML.supervisionado.knn_similaridade import (
+    ItemHistorico,
+    knn_regressao_similaridade,
+)
 
 # --- Parâmetros do modelo (ajustáveis) ---
 K_VIZINHOS = 5
@@ -65,29 +70,6 @@ def _tipo_value(projeto) -> str | None:
     return projeto.tipo_projeto.value if projeto.tipo_projeto else None
 
 
-def jaccard(a: set[str], b: set[str]) -> float:
-    """Índice de Jaccard entre dois conjuntos. Vazio↔vazio = 0."""
-    if not a and not b:
-        return 0.0
-    uniao = a | b
-    if not uniao:
-        return 0.0
-    return len(a & b) / len(uniao)
-
-
-def similaridade(skills_alvo, skills_hist, tipo_alvo, tipo_hist) -> float:
-    """Similaridade [0, 1] combinando skills (Jaccard) e tipo de projeto.
-
-    - Skills: contribuem com `PESO_SKILLS * jaccard`.
-    - Mesmo tipo: adiciona um piso `BONUS_MESMO_TIPO` (mesmo sem overlap de
-      skills, projetos do mesmo tipo já são parecidos).
-    """
-    sim = PESO_SKILLS * jaccard(skills_alvo, skills_hist)
-    if tipo_alvo is not None and tipo_alvo == tipo_hist:
-        sim += BONUS_MESMO_TIPO
-    return min(sim, 1.0)
-
-
 def _estimativa_heuristica(projeto_alvo) -> ResultadoEstimativa:
     """Fallback: horas-base do tipo + complexidade pelo nº de skills."""
     tipo = _tipo_value(projeto_alvo)
@@ -106,37 +88,44 @@ def _estimativa_heuristica(projeto_alvo) -> ResultadoEstimativa:
 def estimar_horas(projeto_alvo, projetos_hist, k: int = K_VIZINHOS) -> ResultadoEstimativa:
     """Estima horas de MVP do `projeto_alvo` a partir de `projetos_hist`.
 
-    Usa a média ponderada pela similaridade dos K vizinhos com `horas_mvp`
-    preenchido; sem vizinhos, cai na heurística.
+    Monta o histórico (projetos com `horas_mvp` > 0), delega ao KNN do Baltazar
+    e, sem vizinhos, cai na heurística de domínio.
     """
-    skills_alvo = _skills_set(projeto_alvo)
-    tipo_alvo = _tipo_value(projeto_alvo)
+    historico = [
+        ItemHistorico(
+            rotulo=p.nome_projeto,
+            tags=_skills_set(p),
+            valor=getattr(p, "horas_mvp", None),
+            categoria=_tipo_value(p),
+        )
+        for p in projetos_hist
+        if p.id != projeto_alvo.id and (getattr(p, "horas_mvp", None) or 0) > 0
+    ]
 
-    candidatos: list[Vizinho] = []
-    for p in projetos_hist:
-        if p.id == projeto_alvo.id:
-            continue
-        horas = getattr(p, "horas_mvp", None)
-        if horas is None or horas <= 0:
-            continue
-        sim = similaridade(skills_alvo, _skills_set(p), tipo_alvo, _tipo_value(p))
-        if sim > 0:
-            candidatos.append(Vizinho(nome=p.nome_projeto, similaridade=sim, horas=float(horas)))
+    resultado = knn_regressao_similaridade(
+        _skills_set(projeto_alvo),
+        _tipo_value(projeto_alvo),
+        historico,
+        k=k,
+        peso_tags=PESO_SKILLS,
+        bonus_mesma_categoria=BONUS_MESMO_TIPO,
+    )
 
-    if not candidatos:
+    if resultado.valor is None:
         return _estimativa_heuristica(projeto_alvo)
 
-    candidatos.sort(key=lambda v: v.similaridade, reverse=True)
-    vizinhos = candidatos[:k]
-
-    soma_pesos = sum(v.similaridade for v in vizinhos)
-    horas = round(sum(v.horas * v.similaridade for v in vizinhos) / soma_pesos, 1)
-
+    vizinhos = [
+        Vizinho(nome=v.rotulo, similaridade=v.similaridade, horas=v.valor)
+        for v in resultado.vizinhos
+    ]
     nomes = ", ".join(f"{v.nome} ({v.horas:.0f}h)" for v in vizinhos)
     explicacao = (
         f"Média ponderada por similaridade de {len(vizinhos)} "
         f"projeto(s) semelhante(s): {nomes}."
     )
     return ResultadoEstimativa(
-        horas=horas, metodo="similaridade", vizinhos=vizinhos, explicacao=explicacao
+        horas=round(resultado.valor, 1),
+        metodo="similaridade",
+        vizinhos=vizinhos,
+        explicacao=explicacao,
     )

@@ -68,7 +68,7 @@ class StatusProjeto(enum.Enum):
     AJUSTES = "Ajustes no Projeto"
     DOCUMENTACAO = "Criação da Documentação"
     AJUSTES_FINOS = "Ajustes Finos"
-    CANCELADO = "CANCELADO"
+    CANCELADO = "Cancelado"
     FINALIZADO = "Projeto Finalizado"
 
 
@@ -79,6 +79,8 @@ class SkillProjeto(enum.Enum):
     VBA = "VBA"
     JAVASCRIPT = "JavaScript"
     HTML = "html"
+    GIT = "Git"
+    REGEX = "Expressões Regulares (Regex)"
 
     # Bancos de Dados
     SQL = "SQL"
@@ -87,6 +89,7 @@ class SkillProjeto(enum.Enum):
     SQL_SERVER = "SQL Server"
     MONGODB = "MongoDB"
     ALEMBIC = "Alembic"
+    SQLALCHEMY = "SQLAlchemy"
 
     # Data Science & Machine Learning
     PANDAS = "Pandas"
@@ -102,6 +105,7 @@ class SkillProjeto(enum.Enum):
     CLUSTERIZACAO = "Clusterização (K-Means)"
     SERIES_TEMPORAIS = "Séries temporais"
     SARIMAX = "Sarimax"
+    PROPHET = "Prophet"
     STATSMODELS = "Statsmodels"
     STATISTICA_PREDITIVA = "Statística descritiva"
     SVM = "SVM"
@@ -115,6 +119,13 @@ class SkillProjeto(enum.Enum):
     PYTORCH = "PyTorch"
     VISAO_COMPUTACIONAL_CV2 = "Visão Computacional (OpenCV)"
     VISAO_COMPUTACIONAL_YOLO = "Visão computacional com Yolo"
+
+    # IA Generativa & NLP
+    NLP = "Processamento de Linguagem Natural (NLP)"
+    LLM = "LLMs (GPT / OpenAI)"
+    AGENTES_IA = "Agentes de IA"
+    ENGENHARIA_PROMPT = "Engenharia de Prompt"
+    EMBEDDINGS = "Embeddings"
 
     # Visualização de Dados
     MATPLOTLIB = "Matplotlib"
@@ -136,10 +147,15 @@ class SkillProjeto(enum.Enum):
     LANGCHAIN = "langchain"
     RAG = "RAG"
     DOCKER = "DOCKER"
+    POWER_AUTOMATE = "Power Automate"
+    AUTOMACAO_EMAIL = "Automação de E-mail (Outlook)"
 
-    # Interfaces de aplicativos
+    # Interfaces de aplicativos e APIs
     PYINSTALLER = "PyInstaller"
     TKINTER = "tkinter"
+    FASTAPI = "FastAPI"
+    FLASK = "Flask"
+    API_REST = "API REST"
 
 
 # --- Tabelas lookup (normalização de area/cargo) ---
@@ -214,6 +230,12 @@ class Projeto(Base):
     # Horas efetivamente investidas no MVP. Alimenta o estimador por similaridade
     # (backend/estimativa.py) e a geração de propostas. None = ainda não medido.
     horas_mvp = Column(Float, nullable=True)
+
+    # Data de início informada manualmente. Tem prioridade sobre a 1ª mudança de
+    # status no cálculo da janela ativa (calendário) e do cycle time. Permite
+    # cadastrar projetos retroativamente sem distorcer as métricas. None = usa o
+    # histórico de status como antes.
+    data_inicio = Column(Date, nullable=True)
 
     tipo_projeto = Column(
         Enum(TipoProjeto, native_enum=False), nullable=True, default=TipoProjeto.OUTROS
